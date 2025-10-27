@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>আমার ওয়েবসাইট</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-analytics-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+
+    <style>
+        .analytics-badge {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: #2c3e50;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-family: Arial, sans-serif;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        .analytics-badge span {
+            margin: 0 5px;
+            font-weight: bold;
+        }
+    </style>
+
+    <script>
+        // Firebase Configuration - আপনার API Key সহ
+        const firebaseConfig = {
+            apiKey: "AIzaSyCediRkFLFfRhnQWG9sCAEek_6-BMcNXXY",
+            authDomain: "my-website-counter56.firebaseapp.com",
+            databaseURL: "https://my-website-counter56-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "my-website-counter56",
+            storageBucket: "my-website-counter56.appspot.com",
+            messagingSenderId: "538008405213",
+            appId: "1:538008405213:web:eed758b2a5d8466f944734",
+            measurementId: "G-WXMHRXJ7SZ"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const analytics = firebase.analytics();
+        const db = firebase.firestore();
+        const rtdb = firebase.database();
+
+        // Comprehensive Analytics System
+        class WebsiteAnalytics {
+            constructor() {
+                this.sessionId = this.generateSessionId();
+                this.pageStartTime = Date.now();
+                this.isNewVisitor = !localStorage.getItem('returningVisitor');
+                this.userId = this.getUserId();
+                this.maxScroll = 0;
+                
+                this.init();
+            }
+
+            // ইউনিক ইউজার আইডি জেনারেট
+            getUserId() {
+                let userId = localStorage.getItem('userId');
+                if (!userId) {
+                    userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    localStorage.setItem('userId', userId);
+                }
+                return userId;
+            }
+
+            // সেশন আইডি জেনারেট
+            generateSessionId() {
+                return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+
+            // ডিভাইস এবং ব্রাউজার ইনফো
+            getUserDeviceInfo() {
+                return {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    screenWidth: screen.width,
+                    screenHeight: screen.height,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    cookieEnabled: navigator.cookieEnabled
+                };
+            }
+
+            // পেজ ইনফো
+            getPageInfo() {
+                return {
+                    url: window.location.href,
+                    path: window.location.pathname,
+                    hostname: window.location.hostname,
+                    referrer: document.referrer,
+                    title: document.title,
+                    timestamp: new Date().toISOString()
+                };
+            }
+
+            // রিয়েল-টাইম ডেটাবেসে ভিজিটর কাউন্ট
+            async updateRealtimeCounter() {
+                try {
+                    const counterRef = rtdb.ref('visitor_count');
+                    
+                    // টোটাল ভিজিটর কাউন্ট
+                    await counterRef.transaction((current) => {
+                        return (current || 0) + 1;
+                    });
+
+                    // অ্যাক্টিভ ইউজার
+                    const activeRef = rtdb.ref('active_users/' + this.sessionId);
+                    await activeRef.set({
+                        userId: this.userId,
+                        lastActive: new Date().toISOString(),
+                        userAgent: navigator.userAgent.substring(0, 100)
+                    });
+
+                    // পেজ আনলোড হলে অ্যাক্টিভ ইউজার রিমুভ
+                    window.addEventListener('beforeunload', () => {
+                        activeRef.remove();
+                    });
+
+                } catch (error) {
+                    console.error('Realtime DB error:', error);
+                }
+            }
+
+            // ভিজিটর ট্র্যাক
+            async trackVisit() {
+                const deviceInfo = this.getUserDeviceInfo();
+                const pageInfo = this.getPageInfo();
+                
+                const visitData = {
+                    sessionId: this.sessionId,
+                    userId: this.userId,
+                    isNewVisitor: this.isNewVisitor,
+                    deviceInfo: deviceInfo,
+                    pageInfo: pageInfo,
+                    visitTime: new Date().toISOString(),
+                    type: 'page_visit'
+                };
+
+                try {
+                    // Firestore-এ ডেটা সেভ
+                    await db.collection('website_analytics').add(visitData);
+                    
+                    // Firebase Analytics-এ ইভেন্ট সেন্ড
+                    analytics.logEvent('page_view', {
+                        page_title: pageInfo.title,
+                        page_location: pageInfo.url,
+                        user_id: this.userId
+                    });
+
+                    console.log('Visit tracked successfully');
+                } catch (error) {
+                    console.error('Error tracking visit:', error);
+                }
+            }
+
+            // সেশন ডুরেশন ট্র্যাক
+            async trackSessionDuration() {
+                window.addEventListener('beforeunload', async () => {
+                    const sessionDuration = Date.now() - this.pageStartTime;
+                    
+                    const sessionData = {
+                        sessionId: this.sessionId,
+                        userId: this.userId,
+                        duration: sessionDuration,
+                        endTime: new Date().toISOString(),
+                        maxScroll: this.maxScroll,
+                        type: 'session_end'
+                    };
+
+                    try {
+                        await db.collection('website_analytics').add(sessionData);
+                    } catch (error) {
+                        console.error('Error tracking session:', error);
+                    }
+                });
+            }
+
+            // ক্লিক ইভেন্ট ট্র্যাক
+            trackClicks() {
+                document.addEventListener('click', (e) => {
+                    const clickData = {
+                        sessionId: this.sessionId,
+                        userId: this.userId,
+                        element: e.target.tagName,
+                        id: e.target.id || 'no-id',
+                        className: e.target.className || 'no-class',
+                        text: e.target.textContent?.substring(0, 50) || 'no-text',
+                        timestamp: new Date().toISOString(),
+                        type: 'click'
+                    };
+
+                    // শুধু গুরুত্বপূর্ণ ক্লিক ট্র্যাক করুন
+                    if (e.target.id || e.target.className.includes('btn') || 
+                        e.target.tagName === 'BUTTON' || e.target.tagName === 'A') {
+                        db.collection('website_analytics').add(clickData);
+                    }
+                });
+            }
+
+            // স্ক্রোল বিহেভিয়ার ট্র্যাক
+            trackScroll() {
+                window.addEventListener('scroll', () => {
+                    const currentScroll = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+                    this.maxScroll = Math.max(this.maxScroll, currentScroll);
+                });
+            }
+
+            // কাস্টম ইভেন্ট ট্র্যাক করার ফাংশন
+            trackCustomEvent(eventName, eventData = {}) {
+                const customEvent = {
+                    sessionId: this.sessionId,
+                    userId: this.userId,
+                    eventName: eventName,
+                    eventData: eventData,
+                    timestamp: new Date().toISOString(),
+                    type: 'custom_event'
+                };
+
+                db.collection('website_analytics').add(customEvent);
+                analytics.logEvent(eventName, eventData);
+            }
+
+            // সব কিছু ইনিশিয়ালাইজ
+            async init() {
+                await this.trackVisit();
+                await this.updateRealtimeCounter();
+                this.trackSessionDuration();
+                this.trackClicks();
+                this.trackScroll();
+                
+                // রিটার্নিং ভিজিটর মার্ক করুন
+                if (this.isNewVisitor) {
+                    localStorage.setItem('returningVisitor', 'true');
+                }
+
+                console.log('Analytics initialized for user:', this.userId);
+            }
+        }
+
+        // Analytics সিস্টেম শুরু করুন
+        document.addEventListener('DOMContentLoaded', function() {
+            window.websiteAnalytics = new WebsiteAnalytics();
+            
+            // রিয়েল-টাইম কাউন্টার দেখান
+            setupRealTimeCounter();
+        });
+
+        // রিয়েল-টাইম কাউন্টার সেটআপ
+        function setupRealTimeCounter() {
+            const counterRef = rtdb.ref('visitor_count');
+            const activeUsersRef = rtdb.ref('active_users');
+            
+            // টোটাল ভিজিটর কাউন্ট
+            counterRef.on('value', (snapshot) => {
+                const totalVisitors = snapshot.val() || 0;
+                document.getElementById('totalVisitors').textContent = totalVisitors;
+            });
+            
+            // অ্যাক্টিভ ইউজার কাউন্ট
+            activeUsersRef.on('value', (snapshot) => {
+                const activeUsers = snapshot.numChildren();
+                document.getElementById('activeUsers').textContent = activeUsers;
+            });
+        }
+
+        // কাস্টম ইভেন্ট ট্র্যাক করার জন্য গ্লোবাল ফাংশন
+        function trackEvent(eventName, eventData) {
+            if (window.websiteAnalytics) {
+                window.websiteAnalytics.trackCustomEvent(eventName, eventData);
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- আপনার ওয়েবসাইট কন্টেন্ট -->
+    <header>
+        <h1>আমার ওয়েবসাইটে স্বাগতম</h1>
+        <nav>
+            <a href="/">হোম</a>
+            <a href="/about">আমাদের সম্পর্কে</a>
+            <a href="/contact">যোগাযোগ</a>
+        </nav>
+    </header>
+
+    <main>
+        <section>
+            <h2>ওয়েবসাইট কন্টেন্ট</h2>
+            <p>এটি আপনার ওয়েবসাইটের মূল কন্টেন্ট।</p>
+            <button onclick="trackEvent('button_click', {button_name: 'sample_button'})">
+                নমুনা বাটন
+            </button>
+        </section>
+    </main>
+
+    <!-- Analytics Badge -->
+    <div class="analytics-badge">
+        🔥 Visitors: <span id="totalVisitors">0</span> | 
+        👥 Active: <span id="activeUsers">0</span>
+    </div>
+
+    <!-- উদাহরণ: কাস্টম ইভেন্ট ট্র্যাকিং -->
+    <script>
+        // ফর্ম সাবমিশন ট্র্যাক করার উদাহরণ
+        document.addEventListener('DOMContentLoaded', function() {
+            // যদি আপনার ফর্ম থাকে
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function(e) {
+                    trackEvent('form_submit', {
+                        form_id: this.id || 'unknown',
+                        form_action: this.action || 'unknown'
+                    });
+                });
+            });
+
+            // লিঙ্ক ক্লিক ট্র্যাক
+            const links = document.querySelectorAll('a');
+            links.forEach(link => {
+                link.addEventListener('click', function() {
+                    trackEvent('link_click', {
+                        link_text: this.textContent.substring(0, 30),
+                        link_url: this.href
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
