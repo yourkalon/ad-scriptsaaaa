@@ -3,121 +3,74 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Firebase Visitor Counter Demo</title>
+  <title>My Website Visitor Counter</title>
   <style>
     body {
       font-family: Arial, sans-serif;
-      background: #f8f9fa;
+      background: #f4f6f8;
       color: #333;
       text-align: center;
-      padding-top: 80px;
+      margin: 0;
+      padding: 50px;
     }
-    h1 {
-      color: #007BFF;
+    .counter-box {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      display: inline-block;
     }
-    #visitorCount {
-      margin-top: 20px;
-      font-size: 20px;
+    h1 { color: #007BFF; }
+    .count {
+      font-size: 3em;
       font-weight: bold;
       color: #28a745;
     }
-    footer {
-      position: fixed;
-      bottom: 10px;
-      width: 100%;
-      text-align: center;
-      color: #666;
-      font-size: 14px;
-    }
   </style>
+</head>
+<body>
 
-  <!-- Firebase Visitor Counter Script -->
+  <div class="counter-box">
+    <h1>Welcome to My Website 👋</h1>
+    <p>Visitor Count:</p>
+    <div class="count" id="visit-count">Loading...</div>
+  </div>
+
+  <!-- Firebase SDK -->
   <script type="module">
-    // 🔹 তোমার Firebase config (তুমি আগেই দিয়েছো)
+    // Import Firebase
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+    import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+
+    // তোমার Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyCediRkFLFfRhnQWG9sCAEek_6-BMcNXXY",
       authDomain: "my-website-counter56.firebaseapp.com",
       projectId: "my-website-counter56",
-      storageBucket: "my-website-counter56.firebasestorage.app",
+      storageBucket: "my-website-counter56.appspot.com",
       messagingSenderId: "538008405213",
       appId: "1:538008405213:web:eed758b2a5d8466f944734",
-      measurementId: "G-WXMHRXJ7SZ"
+      measurementId: "G-WXMHRXJ7SZ",
+      databaseURL: "https://my-website-counter56-default-rtdb.asia-southeast1.firebasedatabase.app/"
     };
 
-    // Firebase import
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import {
-      getFirestore,
-      doc,
-      getDoc,
-      setDoc,
-      updateDoc,
-      serverTimestamp,
-      increment
-    } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore.js";
-
+    // Initialize Firebase
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const COUNTER_DOC = doc(db, "site_counters", "global");
+    const db = getDatabase(app);
+    const counterRef = ref(db, 'visits');
 
-    function todayString() {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    // Function: increase count
+    async function updateCounter() {
+      const snapshot = await get(counterRef);
+      let count = snapshot.exists() ? snapshot.val() : 0;
+      count++;
+      await set(counterRef, count);
+      document.getElementById("visit-count").textContent = count;
     }
 
-    async function ensureDocExists() {
-      const snap = await getDoc(COUNTER_DOC);
-      if (!snap.exists()) {
-        await setDoc(COUNTER_DOC, {
-          pageViews: 0,
-          uniqueToday: 0,
-          lastUniqueDate: "",
-          updatedAt: serverTimestamp()
-        });
-      }
-    }
-
-    async function incrementCounters() {
-      await ensureDocExists();
-      await updateDoc(COUNTER_DOC, { pageViews: increment(1), updatedAt: serverTimestamp() });
-
-      const key = "my_site_last_visit_date";
-      const last = localStorage.getItem(key);
-      const today = todayString();
-
-      const snap = await getDoc(COUNTER_DOC);
-      const data = snap.exists() ? snap.data() : {};
-
-      if (last !== today) {
-        if (data.lastUniqueDate === today) {
-          await updateDoc(COUNTER_DOC, { uniqueToday: increment(1) });
-        } else {
-          await updateDoc(COUNTER_DOC, {
-            uniqueToday: 1,
-            lastUniqueDate: today
-          });
-        }
-        localStorage.setItem(key, today);
-      }
-
-      const latest = await getDoc(COUNTER_DOC);
-      if (latest.exists()) {
-        const vals = latest.data();
-        console.log(`📊 Page Views: ${vals.pageViews}, Unique Today: ${vals.uniqueToday}`);
-        document.getElementById("visitorCount").innerText =
-          `👁️ মোট ভিজিট: ${vals.pageViews} | 👤 আজকের ইউনিক: ${vals.uniqueToday}`;
-      }
-    }
-
-    incrementCounters();
+    // Run on page load
+    updateCounter();
   </script>
-</head>
-<body>
-  <h1>🔥 Simple Firebase Visitor Counter 🔥</h1>
-  <p>এই পেজে প্রতিবার ঢুকলে Firebase এ ভিজিট কাউন্ট বাড়বে।</p>
 
-  <div id="visitorCount">Loading visitor count...</div>
-
-  <footer>Created by Parces | Powered by Firebase</footer>
 </body>
 </html>
